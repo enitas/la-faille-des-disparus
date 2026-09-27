@@ -1,0 +1,642 @@
+<!DOCTYPE html>
+<html lang="fr" class="h-full bg-slate-950 text-slate-100">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>La Faille des Disparus - Escape Game WebAR</title>
+
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  
+  <!-- Google Fonts: Inter & Creepster / Orbitron -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:ital,wght@0,400;0,700;1,400&family=Cinzel+Decorative:wght@700&display=swap" rel="stylesheet">
+
+  <!-- Three.js Engine -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+  <!-- Tailwind Custom Style Configuration -->
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            tech: ['Chakra Petch', 'sans-serif'],
+            rune: ['Cinzel Decorative', 'serif'],
+          },
+          colors: {
+            spectral: {
+              400: '#00ffc3',
+              500: '#00e5af',
+              900: '#002b21',
+            },
+            occult: {
+              400: '#ff0055',
+              900: '#380010',
+            }
+          },
+          animation: {
+            'pulse-fast': 'pulse 0.8s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+            'glitch': 'glitch 1.5s infinite',
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    /* Custom Paranormal CRT & Glow Styles */
+    .crt-overlay {
+      background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
+      background-size: 100% 3px, 3px 100%;
+      pointer-events: none;
+    }
+
+    .glow-spectral {
+      text-shadow: 0 0 10px rgba(0, 255, 195, 0.8), 0 0 20px rgba(0, 255, 195, 0.4);
+    }
+
+    .glow-occult {
+      text-shadow: 0 0 10px rgba(ff, 0, 85, 0.8), 0 0 20px rgba(255, 0, 85, 0.4);
+    }
+
+    .box-spectral-glow {
+      box-shadow: 0 0 15px rgba(0, 255, 195, 0.3), inset 0 0 15px rgba(0, 255, 195, 0.2);
+    }
+
+    /* Radial scanning effect */
+    @keyframes radar-sweep {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+
+    .radar-line {
+      animation: radar-sweep 4s linear infinite;
+      transform-origin: bottom right;
+    }
+  </style>
+</head>
+<body class="h-full w-full overflow-hidden select-none font-tech bg-slate-950 text-slate-100">
+
+  <!-- WebGL Render Canvas -->
+  <div id="canvas-container" class="absolute inset-0 z-0 bg-black"></div>
+
+  <!-- CRT Visual Overlay Filter -->
+  <div class="crt-overlay absolute inset-0 z-10"></div>
+
+  <!-- TOP BAR / PEM (EMF) METER & STATUS -->
+  <header class="absolute top-0 left-0 right-0 z-20 p-4 flex justify-between items-center bg-gradient-to-b from-slate-950/90 to-transparent pointer-events-auto">
+    <div class="flex items-center space-x-3">
+      <div class="w-10 h-10 rounded-lg bg-slate-900/80 border border-spectral-500/40 flex items-center justify-center text-spectral-400 box-spectral-glow">
+        <i class="fa-solid fa-ghost text-xl"></i>
+      </div>
+      <div>
+        <h1 class="font-rune text-lg font-bold tracking-wider text-spectral-400 glow-spectral">LA FAILLE DES DISPARUS</h1>
+        <p id="status-text" class="text-xs text-slate-400 flex items-center gap-1">
+          <span class="w-2 h-2 rounded-full bg-yellow-500 animate-ping"></span>
+          ANALYSE SPECTRALE EN COURS...
+        </p>
+      </div>
+    </div>
+
+    <!-- PEM (EMF) Field Meter -->
+    <div class="bg-slate-900/90 border border-slate-800 rounded-xl p-2 px-3 flex flex-col items-end shadow-lg backdrop-blur-md">
+      <span class="text-[10px] tracking-widest text-slate-400 uppercase font-bold">CHAMP P.E.M.</span>
+      <div class="flex gap-1 mt-1" id="emf-bar">
+        <div class="w-2 h-4 rounded-xs bg-slate-800 transition-colors duration-200" data-level="1"></div>
+        <div class="w-2 h-4 rounded-xs bg-slate-800 transition-colors duration-200" data-level="2"></div>
+        <div class="w-2 h-4 rounded-xs bg-slate-800 transition-colors duration-200" data-level="3"></div>
+        <div class="w-2 h-4 rounded-xs bg-slate-800 transition-colors duration-200" data-level="4"></div>
+        <div class="w-2 h-4 rounded-xs bg-slate-800 transition-colors duration-200" data-level="5"></div>
+      </div>
+      <span id="emf-value" class="text-[11px] font-mono text-spectral-400 mt-0.5">0.2 mG</span>
+    </div>
+  </header>
+
+  <!-- MAIN HUD INTERACTION OVERLAYS -->
+  <main class="absolute inset-0 z-20 pointer-events-none flex flex-col justify-between p-4 pt-20 pb-6">
+
+    <!-- PHASE 1: SCANNING / DETECTION TARGET OVERLAY -->
+    <section id="phase-scan" class="flex-1 flex flex-col items-center justify-center pointer-events-auto">
+      <div class="relative w-64 h-64 md:w-80 md:h-80 border-2 border-dashed border-spectral-500/40 rounded-3xl flex items-center justify-center p-4 transition-all duration-500" id="scan-frame">
+        <!-- Target Reticle Corners -->
+        <div class="absolute -top-2 -left-2 w-6 h-6 border-t-2 border-l-2 border-spectral-400"></div>
+        <div class="absolute -top-2 -right-2 w-6 h-6 border-t-2 border-r-2 border-spectral-400"></div>
+        <div class="absolute -bottom-2 -left-2 w-6 h-6 border-b-2 border-l-2 border-spectral-400"></div>
+        <div class="absolute -bottom-2 -right-2 w-6 h-6 border-b-2 border-r-2 border-spectral-400"></div>
+
+        <!-- Radar Sweep Graphic -->
+        <div class="w-full h-full rounded-full border border-spectral-500/20 relative overflow-hidden flex items-center justify-center">
+          <div class="absolute w-1/2 h-1/2 bg-gradient-to-tl from-spectral-400/20 to-transparent radar-line right-1/2 bottom-1/2"></div>
+          <i class="fa-solid fa-crosshairs text-4xl text-spectral-400/40"></i>
+        </div>
+
+        <div class="absolute -bottom-10 bg-slate-900/90 border border-spectral-500/30 px-4 py-1.5 rounded-full text-xs text-spectral-300 font-mono backdrop-blur-md">
+          Pointez la plaque sacrée
+        </div>
+      </div>
+
+      <!-- Quick Action Controls & Simulator Toggle -->
+      <div class="mt-12 flex flex-col items-center gap-3 w-full max-w-xs">
+        <button id="btn-sim-detect" class="w-full py-3 px-6 rounded-xl bg-gradient-to-r from-spectral-500 to-teal-600 text-slate-950 font-bold text-sm tracking-wide shadow-lg shadow-spectral-500/20 active:scale-95 transition-transform flex items-center justify-center gap-2">
+          <i class="fa-solid fa-bolt"></i>
+          SIMULER LA DÉTECTION (MODE TEST)
+        </button>
+        <p class="text-[11px] text-slate-400 text-center">Permet de tester l'application sans caméra ni plaque réelle.</p>
+      </div>
+    </section>
+
+    <!-- PHASE 2: SPECTRUM RIFT / SPECTRUM EYE (WEBXR / WORLD TRACKING) -->
+    <section id="phase-rift" class="hidden flex-1 flex flex-col justify-between pointer-events-none">
+      
+      <!-- Top Instruction Banner -->
+      <div class="bg-slate-900/90 border border-occult-400/40 rounded-2xl p-4 backdrop-blur-md max-w-md mx-auto pointer-events-auto text-center box-spectral-glow">
+        <div class="text-occult-400 font-rune text-sm font-bold tracking-wider flex items-center justify-center gap-2">
+          <i class="fa-solid fa-eye animate-pulse-fast"></i>
+          L'ŒIL SPECTRAL EST OUVERT
+        </div>
+        <p class="text-xs text-slate-300 mt-1">
+          Tournez autour du puits céleste. Regardez sous les angles cachés de l'artefact pour révéler la séquence des 4 runes occultes.
+        </p>
+      </div>
+
+      <!-- Bottom Interactive Controls: Code Entry Trigger -->
+      <div class="flex flex-col items-center gap-3 pointer-events-auto max-w-sm mx-auto w-full">
+        <div class="flex gap-2 w-full">
+          <button id="btn-re-center" class="flex-1 py-3 px-4 rounded-xl bg-slate-900/90 border border-slate-700 text-slate-300 font-bold text-xs hover:bg-slate-800 transition flex items-center justify-center gap-2">
+            <i class="fa-solid fa-arrows-to-dot"></i> Recentrer le Puits
+          </button>
+          <button id="btn-open-code" class="flex-2 py-3 px-6 rounded-xl bg-gradient-to-r from-occult-400 to-rose-600 text-white font-bold text-xs tracking-wider shadow-lg shadow-occult-400/30 active:scale-95 transition flex items-center justify-center gap-2">
+            <i class="fa-solid fa-key"></i> SAISIR LE CODE
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- RUNE CODE ENTRY MODAL -->
+    <div id="modal-code" class="hidden fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4 pointer-events-auto">
+      <div class="bg-slate-900 border border-occult-400/50 rounded-2xl p-6 max-w-xs w-full text-center shadow-2xl relative">
+        <button id="btn-close-modal" class="absolute top-3 right-3 text-slate-400 hover:text-white">
+          <i class="fa-solid fa-xmark text-lg"></i>
+        </button>
+
+        <h3 class="font-rune text-lg font-bold text-occult-400 glow-occult mb-1">EXORCISER LA FAILLE</h3>
+        <p class="text-xs text-slate-400 mb-6">Saisissez les 4 chiffres occultes découverts sur l'artefact.</p>
+
+        <!-- Code Displays -->
+        <div class="flex justify-center gap-2 mb-6" id="code-inputs">
+          <div class="w-12 h-14 border-2 border-slate-700 rounded-xl bg-slate-950 text-2xl font-mono flex items-center justify-center text-spectral-400 font-bold" data-idx="0">-</div>
+          <div class="w-12 h-14 border-2 border-slate-700 rounded-xl bg-slate-950 text-2xl font-mono flex items-center justify-center text-spectral-400 font-bold" data-idx="1">-</div>
+          <div class="w-12 h-14 border-2 border-slate-700 rounded-xl bg-slate-950 text-2xl font-mono flex items-center justify-center text-spectral-400 font-bold" data-idx="2">-</div>
+          <div class="w-12 h-14 border-2 border-slate-700 rounded-xl bg-slate-950 text-2xl font-mono flex items-center justify-center text-spectral-400 font-bold" data-idx="3">-</div>
+        </div>
+
+        <!-- Keypad Numpad -->
+        <div class="grid grid-cols-3 gap-2 mb-4">
+          <button class="num-btn py-3 rounded-lg bg-slate-800 text-lg font-bold text-slate-200 active:bg-spectral-500 active:text-slate-950">1</button>
+          <button class="num-btn py-3 rounded-lg bg-slate-800 text-lg font-bold text-slate-200 active:bg-spectral-500 active:text-slate-950">2</button>
+          <button class="num-btn py-3 rounded-lg bg-slate-800 text-lg font-bold text-slate-200 active:bg-spectral-500 active:text-slate-950">3</button>
+          <button class="num-btn py-3 rounded-lg bg-slate-800 text-lg font-bold text-slate-200 active:bg-spectral-500 active:text-slate-950">4</button>
+          <button class="num-btn py-3 rounded-lg bg-slate-800 text-lg font-bold text-slate-200 active:bg-spectral-500 active:text-slate-950">5</button>
+          <button class="num-btn py-3 rounded-lg bg-slate-800 text-lg font-bold text-slate-200 active:bg-spectral-500 active:text-slate-950">6</button>
+          <button class="num-btn py-3 rounded-lg bg-slate-800 text-lg font-bold text-slate-200 active:bg-spectral-500 active:text-slate-950">7</button>
+          <button class="num-btn py-3 rounded-lg bg-slate-800 text-lg font-bold text-slate-200 active:bg-spectral-500 active:text-slate-950">8</button>
+          <button class="num-btn py-3 rounded-lg bg-slate-800 text-lg font-bold text-slate-200 active:bg-spectral-500 active:text-slate-950">9</button>
+          <button id="btn-clear-code" class="col-span-1 py-3 rounded-lg bg-slate-800/60 text-slate-400"><i class="fa-solid fa-delete-left"></i></button>
+          <button class="num-btn py-3 rounded-lg bg-slate-800 text-lg font-bold text-slate-200 active:bg-spectral-500 active:text-slate-950">0</button>
+          <button id="btn-submit-code" class="col-span-1 py-3 rounded-lg bg-spectral-500 text-slate-950 font-bold"><i class="fa-solid fa-check"></i></button>
+        </div>
+      </div>
+    </div>
+
+    <!-- PHASE 3: VICTORY SCREEN -->
+    <section id="phase-victory" class="hidden fixed inset-0 z-50 bg-slate-950/95 flex flex-col items-center justify-center p-6 text-center pointer-events-auto">
+      <div class="w-20 h-20 rounded-full bg-spectral-500/20 border-2 border-spectral-400 flex items-center justify-center text-spectral-400 text-3xl mb-6 animate-bounce box-spectral-glow">
+        <i class="fa-solid fa-shield-halved"></i>
+      </div>
+      <h2 class="font-rune text-2xl md:text-3xl font-bold text-spectral-400 glow-spectral mb-2">LA FAILLE EST SCELLÉE !</h2>
+      <p class="text-sm text-slate-300 max-w-sm mb-8 leading-relaxed">
+        Félicitations Enquêteur ! Grâce à votre maîtrise de l'Œil Spectral, l'entité résiduelle a été renvoyée dans les ombres. Le quartier est sécurisé.
+      </p>
+      <button onclick="location.reload()" class="py-3 px-8 rounded-xl bg-spectral-500 text-slate-950 font-bold text-sm shadow-lg shadow-spectral-500/30 hover:scale-105 transition">
+        RECOMMENCER L'ENQUÊTE
+      </button>
+    </section>
+
+  </main>
+
+  <!-- JAVASCRIPT APPLICATION LOGIC -->
+  <script>
+    /* ===================================================================
+       1. PARANORMAL SOUND SYNTHESIZER (WEB AUDIO API - NO EXTERNAL MEDIA)
+       =================================================================== */
+    class AudioSynth {
+      constructor() {
+        this.ctx = null;
+        this.initialized = false;
+      }
+
+      init() {
+        if (this.initialized) return;
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        this.ctx = new AudioCtx();
+        this.initialized = true;
+      }
+
+      // Geiger / PEM Meter Click Effect
+      playGeigerClick() {
+        if (!this.initialized) return;
+        const bufferSize = this.ctx.sampleRate * 0.005; // 5ms click
+        const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+        const data = buffer.getChannelData(0);
+        for (let i = 0; i < bufferSize; i++) {
+          data[i] = Math.random() * 2 - 1;
+        }
+
+        const noise = this.ctx.createBufferSource();
+        noise.buffer = buffer;
+
+        const filter = this.ctx.createBiquadFilter();
+        filter.type = 'bandpass';
+        filter.frequency.value = 2000;
+
+        const gain = this.ctx.createGain();
+        gain.gain.value = 0.15;
+
+        noise.connect(filter);
+        filter.connect(gain);
+        gain.connect(this.ctx.destination);
+        noise.start();
+      }
+
+      // Spectral Chime / Success Tone
+      playSuccessTone() {
+        if (!this.initialized) return;
+        const now = this.ctx.currentTime;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(440, now); // A4
+        osc.frequency.exponentialRampToValueAtTime(880, now + 0.4); // A5
+
+        gain.gain.setValueAtTime(0.3, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.8);
+
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start();
+        osc.stop(now + 0.8);
+      }
+
+      // Error Buzzer Tone
+      playErrorTone() {
+        if (!this.initialized) return;
+        const now = this.ctx.currentTime;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(150, now);
+
+        gain.gain.setValueAtTime(0.3, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start();
+        osc.stop(now + 0.3);
+      }
+    }
+
+    const soundEngine = new AudioSynth();
+    document.addEventListener('click', () => soundEngine.init(), { once: true });
+
+    /* ===================================================================
+       2. THREE.JS ENGINE & VOID HOLE (DEPTH MASK & 3D RELIC)
+       =================================================================== */
+    let scene, camera, renderer;
+    let pitGroup, relicMesh;
+    let isSimulationMode = false;
+    let isWebXRSupported = false;
+    const SECRET_CODE = "1882"; // The secret code hidden on relic sides
+
+    function initThreeJS() {
+      const container = document.getElementById('canvas-container');
+
+      // Scene
+      scene = new THREE.Scene();
+      scene.fog = new THREE.FogExp2(0x020617, 0.15);
+
+      // Camera
+      camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 100);
+      camera.position.set(0, 2.5, 3.5);
+      camera.lookAt(0, -0.5, 0);
+
+      // WebGL Renderer with Stencil Buffer Enabled
+      renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, stencil: true });
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.shadowMap.enabled = true;
+      container.appendChild(renderer.domElement);
+
+      // Lighting
+      const ambientLight = new THREE.AmbientLight(0x0f172a, 1.5);
+      scene.add(ambientLight);
+
+      const spectralLight = new THREE.PointLight(0x00ffc3, 3, 10);
+      spectralLight.position.set(0, 1, 0);
+      scene.add(spectralLight);
+
+      const occultLight = new THREE.PointLight(0xff0055, 2, 8);
+      occultLight.position.set(0, -1.5, 0);
+      scene.add(occultLight);
+
+      // Build 3D Depth Portal / Pit ("Le Puits des Âmes")
+      buildDepthPit();
+
+      // Window Resize Listener
+      window.addEventListener('resize', onWindowResize);
+
+      // Touch / Mouse Camera Orbit Controls for Simulator
+      setupOrbitControls();
+
+      // Render Loop
+      animate();
+    }
+
+    // Helper to generate Canvas textures for secret code digits on 3D surfaces
+    function createRuneTexture(digit) {
+      const canvas = document.createElement('canvas');
+      canvas.width = 256;
+      canvas.height = 256;
+      const ctx = canvas.getContext('2d');
+
+      ctx.fillStyle = '#0a0c10';
+      ctx.fillRect(0, 0, 256, 256);
+
+      // Outer glowing ring
+      ctx.strokeStyle = '#00ffc3';
+      ctx.lineWidth = 8;
+      ctx.beginPath();
+      ctx.arc(128, 128, 100, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // Digit
+      ctx.fillStyle = '#ff0055';
+      ctx.font = 'bold 110px "Chakra Petch", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(digit, 128, 135);
+
+      const texture = new THREE.CanvasTexture(canvas);
+      return texture;
+    }
+
+    function buildDepthPit() {
+      pitGroup = new THREE.Group();
+      pitGroup.position.set(0, 0, 0);
+
+      // 1. Occluder Ground Mask (prevents viewing depth pit from outside top opening)
+      const ringGeo = new THREE.RingGeometry(0.98, 10, 32);
+      const maskMat = new THREE.MeshBasicMaterial({ colorWrite: false }); // Masking stencil
+      const maskMesh = new THREE.Mesh(ringGeo, maskMat);
+      maskMesh.rotation.x = -Math.PI / 2;
+      maskMesh.position.y = 0;
+      pitGroup.add(maskMesh);
+
+      // 2. Interior Pit Cylinder Walls (Going downward)
+      const pitGeo = new THREE.CylinderGeometry(1, 1, 4, 32, 1, true);
+      const pitMat = new THREE.MeshStandardMaterial({
+        color: 0x050b14,
+        roughness: 0.8,
+        metalness: 0.2,
+        side: THREE.BackSide
+      });
+      const pitMesh = new THREE.Mesh(pitGeo, pitMat);
+      pitMesh.position.y = -2;
+      pitGroup.add(pitMesh);
+
+      // Pit Bottom Floor
+      const floorGeo = new THREE.CircleGeometry(1, 32);
+      const floorMat = new THREE.MeshStandardMaterial({ color: 0x020408, side: THREE.DoubleSide });
+      const floorMesh = new THREE.Mesh(floorGeo, floorMat);
+      floorMesh.rotation.x = -Math.PI / 2;
+      floorMesh.position.y = -4;
+      pitGroup.add(floorMesh);
+
+      // 3. Floating Relic Artefact with 4 face materials showing code (1-8-8-2)
+      const materials = [
+        new THREE.MeshStandardMaterial({ map: createRuneTexture('1') }), // Face 0
+        new THREE.MeshStandardMaterial({ map: createRuneTexture('8') }), // Face 1
+        new THREE.MeshStandardMaterial({ map: createRuneTexture('8') }), // Face 2
+        new THREE.MeshStandardMaterial({ map: createRuneTexture('2') }), // Face 3
+        new THREE.MeshStandardMaterial({ color: 0x00ffc3, emissive: 0x003322 }), // Top
+        new THREE.MeshStandardMaterial({ color: 0xff0055, emissive: 0x330011 })  // Bottom
+      ];
+
+      const relicGeo = new THREE.BoxGeometry(0.5, 0.7, 0.5);
+      relicMesh = new THREE.Mesh(relicGeo, materials);
+      relicMesh.position.set(0, -2, 0);
+      pitGroup.add(relicMesh);
+
+      scene.add(pitGroup);
+    }
+
+    // Touch/Mouse Orbit logic for viewing the pit from angles
+    let isDragging = false;
+    let previousMousePosition = { x: 0, y: 0 };
+    let cameraAngleX = 0;
+    let cameraAngleY = 0.5;
+
+    function setupOrbitControls() {
+      const domElement = renderer.domElement;
+
+      const onPointerDown = (e) => {
+        isDragging = true;
+        previousMousePosition = { x: e.clientX || e.touches[0].clientX, y: e.clientY || e.touches[0].clientY };
+      };
+
+      const onPointerMove = (e) => {
+        if (!isDragging) return;
+        const currentX = e.clientX || (e.touches && e.touches[0].clientX);
+        const currentY = e.clientY || (e.touches && e.touches[0].clientY);
+
+        const deltaX = currentX - previousMousePosition.x;
+        const deltaY = currentY - previousMousePosition.y;
+
+        cameraAngleX -= deltaX * 0.008;
+        cameraAngleY = Math.max(0.2, Math.min(1.2, cameraAngleY + deltaY * 0.008));
+
+        updateCameraPosition();
+
+        previousMousePosition = { x: currentX, y: currentY };
+      };
+
+      const onPointerUp = () => { isDragging = false; };
+
+      domElement.addEventListener('mousedown', onPointerDown);
+      domElement.addEventListener('mousemove', onPointerMove);
+      window.addEventListener('mouseup', onPointerUp);
+
+      domElement.addEventListener('touchstart', onPointerDown, { passive: true });
+      domElement.addEventListener('touchmove', onPointerMove, { passive: true });
+      window.addEventListener('touchend', onPointerUp);
+    }
+
+    function updateCameraPosition() {
+      const radius = 3.5;
+      camera.position.x = radius * Math.sin(cameraAngleX) * Math.cos(cameraAngleY);
+      camera.position.y = radius * Math.sin(cameraAngleY) + 0.5;
+      camera.position.z = radius * Math.cos(cameraAngleX) * Math.cos(cameraAngleY);
+      camera.lookAt(0, -1.5, 0);
+    }
+
+    function onWindowResize() {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    }
+
+    // Main 3D Loop
+    let clock = new THREE.Clock();
+    function animate() {
+      requestAnimationFrame(animate);
+
+      const elapsedTime = clock.getElapsedTime();
+
+      // Rotate Relic slowly inside pit
+      if (relicMesh) {
+        relicMesh.rotation.y = elapsedTime * 0.4;
+        relicMesh.position.y = -2 + Math.sin(elapsedTime * 1.5) * 0.15;
+      }
+
+      // Random geiger clicks frequency during game
+      if (Math.random() < 0.08) {
+        soundEngine.playGeigerClick();
+      }
+
+      renderer.render(scene, camera);
+    }
+
+    /* ===================================================================
+       3. GAME FLOW, UI HANDLERS & PEM METER CONTROLLER
+       =================================================================== */
+    const phaseScan = document.getElementById('phase-scan');
+    const phaseRift = document.getElementById('phase-rift');
+    const phaseVictory = document.getElementById('phase-victory');
+    const statusText = document.getElementById('status-text');
+
+    // PEM (EMF) Meter Updates
+    function setEmfLevel(level, valueText) {
+      const bars = document.querySelectorAll('#emf-bar div');
+      bars.forEach((bar, idx) => {
+        if (idx < level) {
+          bar.classList.remove('bg-slate-800');
+          bar.classList.add(idx >= 3 ? 'bg-occult-400' : 'bg-spectral-400');
+        } else {
+          bar.className = 'w-2 h-4 rounded-xs bg-slate-800 transition-colors duration-200';
+        }
+      });
+      document.getElementById('emf-value').innerText = valueText;
+    }
+
+    // Trigger Simulation Detection
+    document.getElementById('btn-sim-detect').addEventListener('click', () => {
+      soundEngine.playSuccessTone();
+      setEmfLevel(5, "9.8 mG [ANOMALIE]");
+
+      statusText.innerHTML = `<span class="w-2 h-2 rounded-full bg-occult-400 animate-pulse"></span> PUITS SPECTRAL DÉTECTÉ`;
+      statusText.classList.add('text-occult-400');
+
+      // Transition from Scan Phase to World Tracking Rift Phase
+      phaseScan.classList.add('hidden');
+      phaseRift.classList.remove('hidden');
+
+      // Adjust Camera
+      updateCameraPosition();
+    });
+
+    // Recenter Pit Button
+    document.getElementById('btn-re-center').addEventListener('click', () => {
+      cameraAngleX = 0;
+      cameraAngleY = 0.5;
+      updateCameraPosition();
+      soundEngine.playGeigerClick();
+    });
+
+    /* ===================================================================
+       4. CODE ENTRY MODAL & EXORCISM PUZZLE LOGIC
+       =================================================================== */
+    const modalCode = document.getElementById('modal-code');
+    const btnOpenCode = document.getElementById('btn-open-code');
+    const btnCloseModal = document.getElementById('btn-close-modal');
+    let enteredCode = "";
+
+    btnOpenCode.addEventListener('click', () => {
+      modalCode.classList.remove('hidden');
+      soundEngine.playGeigerClick();
+    });
+
+    btnCloseModal.addEventListener('click', () => {
+      modalCode.classList.add('hidden');
+    });
+
+    // Numpad key handlers
+    document.querySelectorAll('.num-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        if (enteredCode.length < 4) {
+          enteredCode += e.target.innerText.trim();
+          updateCodeDisplay();
+          soundEngine.playGeigerClick();
+        }
+      });
+    });
+
+    document.getElementById('btn-clear-code').addEventListener('click', () => {
+      enteredCode = enteredCode.slice(0, -1);
+      updateCodeDisplay();
+      soundEngine.playGeigerClick();
+    });
+
+    function updateCodeDisplay() {
+      const displays = document.querySelectorAll('#code-inputs div');
+      displays.forEach((box, i) => {
+        box.innerText = enteredCode[i] || "-";
+        if (enteredCode[i]) {
+          box.classList.add('border-spectral-400');
+        } else {
+          box.classList.remove('border-spectral-400');
+        }
+      });
+    }
+
+    // Code Verification
+    document.getElementById('btn-submit-code').addEventListener('click', () => {
+      if (enteredCode === SECRET_CODE) {
+        soundEngine.playSuccessTone();
+        modalCode.classList.add('hidden');
+        phaseRift.classList.add('hidden');
+        phaseVictory.classList.remove('hidden');
+      } else {
+        soundEngine.playErrorTone();
+        const inputsContainer = document.getElementById('code-inputs');
+        inputsContainer.classList.add('animate-shake');
+        setTimeout(() => inputsContainer.classList.remove('animate-shake'), 500);
+        enteredCode = "";
+        updateCodeDisplay();
+      }
+    });
+
+    // Initialize 3D Engine on DOM Load
+    window.addEventListener('DOMContentLoaded', () => {
+      initThreeJS();
+      setEmfLevel(1, "0.2 mG");
+    });
+  </script>
+</body>
+</html>
